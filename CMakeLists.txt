@@ -211,17 +211,27 @@ if(TRITON_BUILD_PYTHON_MODULE)
     LLVMAMDGPUAsmParser
 
   )
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR # Linux arm64
-     CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")     # macOS arm64
-      list(APPEND TRITON_LIBRARIES
-          LLVMAArch64CodeGen
-          LLVMAArch64AsmParser
-      )
+  if(CMAKE_SYSTEM_NAME MATCHES "Linux" OR
+      CMAKE_SYSTEM_NAME MATCHES "Darwin")
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64" OR # Linux arm64
+        CMAKE_SYSTEM_PROCESSOR MATCHES "arm64")     # macOS arm64
+        list(APPEND TRITON_LIBRARIES
+            LLVMAArch64CodeGen
+            LLVMAArch64AsmParser
+        )
+    else()
+        list(APPEND TRITON_LIBRARIES
+            LLVMX86CodeGen
+            LLVMX86AsmParser
+        )
+    endif()
+  elif(CMAKE_SYSTEM_NAME MATCHES "Windows")
+    list(APPEND TRITON_LIBRARIES
+        LLVMX86CodeGen.dll
+        LLVMX86AsmParser.dll
+    )
   else()
-      list(APPEND TRITON_LIBRARIES
-          LLVMX86CodeGen
-          LLVMX86AsmParser
-      )
+    message(FATAL_ERROR "No valid cmake config found for LLVM libraries for this operating system.")
   endif()
 
   # Define triton library
