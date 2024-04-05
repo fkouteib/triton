@@ -158,6 +158,8 @@ def get_llvm_package_info():
             vglibc = tuple(map(int, platform.libc_ver()[1].split('.')))
             vglibc = vglibc[0] * 100 + vglibc[1]
             system_suffix = 'ubuntu-x64' if vglibc > 217 else 'centos-x64'
+    elif system == "Windows":
+        system_suffix = "windows-x64"
     else:
         return Package("llvm", "LLVM-C.lib", "", "LLVM_INCLUDE_DIRS", "LLVM_LIBRARY_DIR", "LLVM_SYSPATH")
     # use_assert_enabled_llvm = check_env_flag("TRITON_USE_ASSERT_ENABLED_LLVM", "False")
@@ -222,13 +224,15 @@ def download_and_copy(src_path, variable, version, url_func):
         return
     base_dir = os.path.dirname(__file__)
     system = platform.system()
-    arch = {"x86_64": "64", "arm64": "aarch64", "aarch64": "aarch64"}[platform.machine()]
-    url = url_func(arch, version)
+    arch = {"x86_64": "64", "AMD64": "64", "arm64": "aarch64", "aarch64": "aarch64"}[platform.machine()]
+    plat = {"Linux": "linux", "Windows": "win"}[system]
+    url = url_func(plat, arch, version)
     tmp_path = os.path.join(triton_cache_path, "nvidia")  # path to cache the download
     dst_path = os.path.join(base_dir, os.pardir, "third_party", "nvidia", "backend", src_path)  # final binary path
     src_path = os.path.join(tmp_path, src_path)
     download = not os.path.exists(src_path)
-    if os.path.exists(dst_path) and system == "Linux":
+    if os.path.exists(dst_path) and \
+      (system == "Linux" or system == "Windows"):
         curr_version = subprocess.check_output([dst_path, "--version"]).decode("utf-8").strip()
         curr_version = re.search(r"V([.|\d]+)", curr_version).group(1)
         download = download or curr_version != version
@@ -395,25 +399,25 @@ with open("../cmake/nvidia-toolchain-version.txt", "r") as nvidia_version_file:
     NVIDIA_TOOLCHAIN_VERSION = nvidia_version_file.read().strip()
 
 download_and_copy(
-    src_path="bin/ptxas",
+    src_path={"Linux": "bin/ptxas", "Windows": "bin/ptxas.exe"}[platform.system()],
     variable="TRITON_PTXAS_PATH",
     version=NVIDIA_TOOLCHAIN_VERSION,
-    url_func=lambda arch, version:
-    f"https://anaconda.org/nvidia/cuda-nvcc/{version}/download/linux-{arch}/cuda-nvcc-{version}-0.tar.bz2",
+    url_func=lambda plat, arch, version:
+    f"https://anaconda.org/nvidia/cuda-nvcc/{version}/download/{plat}-{arch}/cuda-nvcc-{version}-0.tar.bz2",
 )
 download_and_copy(
-    src_path="bin/cuobjdump",
+    src_path={"Linux": "bin/cuobjdump", "Windows": "bin/cuobjdump.exe"}[platform.system()],
     variable="TRITON_CUOBJDUMP_PATH",
     version=NVIDIA_TOOLCHAIN_VERSION,
-    url_func=lambda arch, version:
-    f"https://anaconda.org/nvidia/cuda-cuobjdump/{version}/download/linux-{arch}/cuda-cuobjdump-{version}-0.tar.bz2",
+    url_func=lambda plat, arch, version:
+    f"https://anaconda.org/nvidia/cuda-cuobjdump/{version}/download/{plat}-{arch}/cuda-cuobjdump-{version}-0.tar.bz2",
 )
 download_and_copy(
-    src_path="bin/nvdisasm",
+    src_path={"Linux": "bin/nvdisasm", "Windows": "bin/nvdisasm.exe"}[platform.system()],
     variable="TRITON_NVDISASM_PATH",
     version=NVIDIA_TOOLCHAIN_VERSION,
-    url_func=lambda arch, version:
-    f"https://anaconda.org/nvidia/cuda-nvdisasm/{version}/download/linux-{arch}/cuda-nvdisasm-{version}-0.tar.bz2",
+    url_func=lambda plat, arch, version:
+    f"https://anaconda.org/nvidia/cuda-nvdisasm/{version}/download/{plat}-{arch}/cuda-nvdisasm-{version}-0.tar.bz2",
 )
 
 backends = [*BackendInstaller.copy(["nvidia", "amd"]), *BackendInstaller.copy_externals()]

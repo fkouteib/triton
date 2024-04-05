@@ -39,6 +39,9 @@ cmake-build-*
 cuobjdump
 nvdisasm
 ptxas
+cuobjdump.exe
+nvdisasm.exe
+ptxas.exe
 
 # Docs
 docs/_build/
