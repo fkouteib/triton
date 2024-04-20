@@ -29,6 +29,7 @@ class HIPOptions:
     capability: int = None
     matrix_instr_nonkdim: int = 0
     kpack: int = 1
+    allow_flush_denorm: bool = False
     max_num_imprecise_acc_default: int = 0
 
     @staticmethod
@@ -40,6 +41,18 @@ class HIPOptions:
             return 64
         print("Warning: Unexpected device. Wave Size is set to 64.")
         return 64  # Default value
+
+    @staticmethod
+    def get_compute_capability(arch: str) -> int:
+        arch_dict = {
+            'gfx940': 300,
+            'gfx941': 300,
+            'gfx942': 300,
+            'gfx90a': 200,
+            'gfx908': 100,
+            'gfx906': 60,
+        }
+        return arch_dict.get(arch, 0)
 
     def has_amd_mma_instr(self) -> bool:
         is_RDNA3 = 'gfx11' in self.arch
@@ -81,6 +94,7 @@ class HIPBackend(BaseBackend):
     def parse_options(self, opts) -> Any:
         args = {'arch': self.target[1]}
         args.update({k: opts[k] for k in HIPOptions.__dataclass_fields__.keys() if k in opts})
+        args['capability'] = HIPOptions.get_compute_capability(args['arch'])
         return HIPOptions(**args)
 
     def pack_metadata(self, metadata):
@@ -94,7 +108,7 @@ class HIPBackend(BaseBackend):
         )
 
     def get_codegen_implementation(self):
-        codegen_fns = {}
+        codegen_fns = dict()
         return codegen_fns
 
     def load_dialects(self, ctx):
@@ -169,11 +183,10 @@ class HIPBackend(BaseBackend):
         passes.convert.add_index_to_llvmir(pm)
 
         passes.ttgpuir.add_allocate_shared_memory(pm)
-        amd.passes.ttgpuir.add_to_llvmir(pm)
+        amd.passes.ttgpuir.add_to_llvmir(pm, capability)
         passes.common.add_canonicalizer(pm)
         passes.common.add_cse(pm)
 
-        passes.convert.add_scf_to_cf(pm)
         passes.convert.add_cf_to_llvmir(pm)
         passes.convert.add_arith_to_llvmir(pm)
         passes.common.add_canonicalizer(pm)
@@ -193,7 +206,6 @@ class HIPBackend(BaseBackend):
         amd.set_isa_version(llvm_mod, options.arch)
         amd.set_abi_version(llvm_mod, 400)
         amd.set_bool_control_constant(llvm_mod, "__oclc_finite_only_opt", False)
-        amd.set_bool_control_constant(llvm_mod, "__oclc_daz_opt", False)
         amd.set_bool_control_constant(llvm_mod, "__oclc_correctly_rounded_sqrt32", True)
         amd.set_bool_control_constant(llvm_mod, "__oclc_unsafe_math_opt", False)
         amd.set_bool_control_constant(llvm_mod, "__oclc_wavefrontsize64", options.warp_size == 64)
@@ -204,14 +216,15 @@ class HIPBackend(BaseBackend):
         kernels[0].set_calling_conv(amd.CALLING_CONV_AMDGPU_KERNEL)
         kernels[0].add_fn_attr("amdgpu-flat-work-group-size", f"1,{options.num_warps*options.warp_size}")
         kernels[0].add_fn_attr("amdgpu-waves-per-eu", f"{options.waves_per_eu}")
-        kernels[0].add_fn_attr("denormal-fp-math-f32", "preserve-sign")
+        denormal_mode = "preserve-sign" if options.allow_flush_denorm else "ieee"
+        kernels[0].add_fn_attr("denormal-fp-math-f32", denormal_mode)
         # Hint the compiler that we'd like the firmware to set the kernel arguments
         # to user SGPRs so that the kernel does not need to s_load its arguments
         # from memory.
         amd.set_all_fn_arg_inreg(kernels[0])
 
         if options.extern_libs:
-            paths = [path for (name, path) in options.extern_libs]
+            paths = [path for (name, path) in options.extern_libs if amd.need_extern_lib(llvm_mod, name)]
             llvm.link_extern_libs(llvm_mod, paths)
 
         llvm.optimize_module(llvm_mod, llvm.OPTIMIZE_O3)
@@ -254,7 +267,7 @@ class HIPBackend(BaseBackend):
     def add_stages(self, stages, options):
         stages["ttir"] = lambda src, metadata: self.make_ttir(src, metadata, options)
         stages["ttgir"] = lambda src, metadata: self.make_ttgir(src, metadata, options)
-        stages["llir"] = lambda src, metadata: self.make_llir(src, metadata, options, 90)
+        stages["llir"] = lambda src, metadata: self.make_llir(src, metadata, options, options.capability)
         stages["amdgcn"] = lambda src, metadata: self.make_amdgcn(src, metadata, options)
         stages["hsaco"] = lambda src, metadata: self.make_hsaco(src, metadata, options)
 
