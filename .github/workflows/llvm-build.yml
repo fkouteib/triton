@@ -69,7 +69,7 @@ jobs:
 
     - name: Set up MSVC
       if: matrix.config.arch == 'x64' && (matrix.config.target-os == 'windows')
-      uses: ilammy/msvc-dev-cmd@v1.13
+      uses: ilammy/msvc-dev-cmd@v1.13.0
       with:
         arch: amd64
 
